@@ -2,7 +2,13 @@
     x:Class="emedia1.App"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    xmlns:local="using:emedia1"
+    xmlns:viewModels="using:emedia1.ViewModels"
     RequestedTheme="Light">
-
+    <Application.Resources>
+        <viewModels:ViewModelLocator xmlns:vm="clr-namespace:emedia1"
+                           x:Key="Locator" />
+    </Application.Resources>
 </Application>
+
+
+
