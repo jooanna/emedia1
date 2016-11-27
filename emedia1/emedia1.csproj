@@ -124,6 +124,7 @@
     <None Include="emedia1_TemporaryKey.pfx" />
   </ItemGroup>
   <ItemGroup>
+    <Content Include="Assets\lines.jpg" />
     <Content Include="Assets\Minionki.jpg" />
     <Content Include="Assets\owl.jpg" />
     <Content Include="Properties\Default.rd.xml" />

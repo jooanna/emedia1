@@ -1,6 +1,8 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices.WindowsRuntime;
 using System.Threading.Tasks;
 using System.Windows.Input;
 using Windows.Storage;
@@ -22,7 +24,7 @@ namespace emedia1.ViewModels
         public MainPageViewModel(INavigationService navigationService)
         {
             _navigationService = navigationService;
-            _selectedFile = new Image { Source = new BitmapImage(new Uri("ms-appx:///Assets/owl.jpg")) };
+            _selectedFile = new Image { Source = new BitmapImage(new Uri("ms-appx:///Assets/lines.jpg")) };
         }
 
         private Image _selectedFile;
@@ -54,7 +56,7 @@ namespace emedia1.ViewModels
         }
 
 
-        public string FilePath { get; set; } = @"ms-appx:///Assets/owl.jpg";
+        public string FilePath { get; set; } = @"ms-appx:///Assets/lines.jpg";
 
         public ICommand SelectFile => new RelayCommand(async () =>
         {
@@ -87,25 +89,64 @@ namespace emedia1.ViewModels
             await OnShowSpectrum();
         });
 
-        public async Task CreateSpectrumImage(List<List<int>> spectrum)
-        {
-            List<byte[]> listOfArraysOfBytes = new List<byte[]>();
-            foreach (var listOfInts in spectrum)
-            {
-                List<byte> listOfBytes = new List<byte>();
-                foreach (var ints in listOfInts)
-                {
-                    listOfBytes.Add(Convert.ToByte(ints));
-                }
-                listOfArraysOfBytes.Add(listOfBytes.ToArray());
 
+        public static byte[] ToGreyscale(byte[] srcPixels, int width, int height)
+        {
+            byte b, g, r, a, luminance;
+            byte[] destPixels = new byte[4 * width * height];
+
+            // Convert pixel data to greyscale
+            for (int y = 0; y < height; y++)
+            {
+                for (int x = 0; x < width; x++)
+                {
+                    b = srcPixels[(x + y * width) * 4];
+                    g = srcPixels[(x + y * width) * 4 + 1];
+                    r = srcPixels[(x + y * width) * 4 + 2];
+                    a = srcPixels[(x + y * width) * 4 + 3];
+                    luminance = Convert.ToByte(0.299 * r + 0.587 * g + 0.114 * b);
+
+                    destPixels[(x + y * width) * 4] = luminance;     // B
+                    destPixels[(x + y * width) * 4 + 1] = luminance; // G
+                    destPixels[(x + y * width) * 4 + 2] = luminance; // R
+                    destPixels[(x + y * width) * 4 + 3] = luminance; // A
+
+                }
             }
 
-            byte[] array = listOfArraysOfBytes
-                .SelectMany(a => a)
-                .ToArray();
-            var bitMap = ConvertToPicture(array);
-            TransformedFile.Source = await bitMap;
+            return destPixels;
+        }
+
+        public async Task CreateSpectrumImage(int[][] spectrum)
+        {
+
+            byte[] bytes = new byte[4*50*50];
+
+            WriteableBitmap wb = new WriteableBitmap(50, 50);
+            
+            using (Stream stream = wb.PixelBuffer.AsStream())
+            {
+                if (stream.CanWrite)
+                {
+                    int index = 0;
+                    foreach (var listOfInts in spectrum)
+                    {
+                        foreach (var ints in listOfInts)
+                        {
+                            bytes[index++] = Convert.ToByte(ints);
+                        }
+                    }
+                    var newBytes = ToGreyscale(bytes, 50, 50);
+                    await stream.WriteAsync(bytes, 0, bytes.Length);
+                    //await stream.WriteAsync(newBytes, 0, newBytes.Length);
+                    stream.Flush();
+                    TransformedFile.Source = wb;
+                }
+            }
+
+
+ //           var bitMap = ConvertToPicture(array);
+   //         TransformedFile.Source = await bitMap;
         }
 
         public async Task<BitmapImage> ConvertToPicture(byte[] imageArray)
@@ -160,13 +201,13 @@ namespace emedia1.ViewModels
             }
             for (var v = 0; v < height; ++v) // jakas niby konwersja, zeby niskie czestotliwosci byly w srodku, czyli tak jak kiedys na zajeciach mielismy te obrazki
             {
-                var column = 0;
-                for (var u = 0; u < width; ++u)
+                for (var u = 0; u < width*3; u+=3)
                 {
                     var pixelValue = greyTab[v][u] * (int)Math.Pow(-1, v + u);
-                    coloredTab[v][column] = pixelValue;
-                    coloredTab[v][++column] = pixelValue;
-                    coloredTab[v][++column] = pixelValue;
+                    coloredTab[v][u] = pixelValue;
+                    coloredTab[v][u+1] = pixelValue;
+                    coloredTab[v][u+2] = pixelValue;
+                    //coloredTab[v][u+2] = greyTab[v][u+3];
                 }
             }
         }
@@ -185,29 +226,43 @@ namespace emedia1.ViewModels
             for (var r = 0; r < height; ++r)
             {
                 grayImage.Add(new List<int>());
-                var column = 0;
-                for (var c = 0; c < width * 3; ++c)
+                for (var c = 0; c < width*3; c+=3)
                 {
-                    var greyPixel = 0.2989 * coloredImage[r][c] + 0.5870 * coloredImage[r][++c] + 0.1140 * coloredImage[r][++c];
-                    grayImage[r].Add((int)greyPixel);
+                    var b = coloredImage[r][c];
+                    var g = coloredImage[r][c + 1];
+                    var red = coloredImage[r][c + 2];
+                    var a = coloredImage[r][c + 3];
+                    var luminance = (0.299 * red + 0.587 * g + 0.114 * b);
+                    grayImage[r].Add((int)luminance);
+                    grayImage[r].Add((int)luminance);
+                    grayImage[r].Add((int)luminance);
+                    grayImage[r].Add((int)luminance);
                 }
             }
             var reciprocalSquareOfWidthHeightImage = 1 / (Math.Sqrt(width * height));
             FftShift(height, width, grayImage, coloredImage);
             var maxModulValue = 0;
 
-            for (var v = 0; v < height; ++v)
+            var convertedTab = new int[height][];
+            for (var i = 0; i < height; ++i)
             {
-                var column = 0;
-                for (var u = 0; u < width; ++u)
+                //convertedTab[i] = new int[width];
+               convertedTab[i] = new int[width*4];
+            }
+
+            for (var v = 0; v < height; ++v) // y
+            {
+               // for (var u = 0; u < width; u+=1)
+                for (var u = 0; u < width*4; u+=4) //x
                 {
                     double sumReal = 0;
                     double sumImag = 0;
                     for (var n = 0; n < height; ++n)
                     {
-                        for (var m = 0; m < width; ++m)
+                        //for (var m = 0; m < width; m+=1)
+                        for (var m = 0; m < width*4; m+=4)
                         {
-                            var alfa = (-2) * Math.PI * ((m * u) / height + (n * v) / width);
+                            var alfa = (-2) * Math.PI * ((m * u) / width + (n * v) / height);
                             sumReal += grayImage[n][m] * Math.Cos(alfa);
                             sumImag += grayImage[n][m] * Math.Sin(alfa); //nie wiem czy kolejnosc dobra
                         }
@@ -216,27 +271,28 @@ namespace emedia1.ViewModels
                     var imaginaryPixelVal = reciprocalSquareOfWidthHeightImage * sumImag;
                     int pixelValue = (int)Math.Round(Math.Sqrt(realPixelVal * realPixelVal + imaginaryPixelVal * imaginaryPixelVal));
 
-                    coloredImage[v][column] = pixelValue;
-                    coloredImage[v][++column] = pixelValue;
-                    coloredImage[v][++column] = pixelValue;
+                    convertedTab[v][u] = pixelValue;
+                    convertedTab[v][u+1] = pixelValue;
+                    convertedTab[v][u+2] = pixelValue;
+                    convertedTab[v][u+3] = pixelValue;
 
-                    maxModulValue = Math.Max(maxModulValue, grayImage[v][u]);
+                    maxModulValue = Math.Max(maxModulValue, convertedTab[v][u]);
                 }
             }
             for (var v = 0; v < height; ++v) //normalizacja - rozciagniecie na 0-255
             {
-                var column = 0;
-                for (var u = 0; u < width; ++u)
+                for (var u = 0; u < width*4; u+=4)
                 {
-                    var pixel = grayImage[v][u];
+                    var pixel = convertedTab[v][u];
                     int newPixel = (int)Math.Round((double)(pixel * 255 / maxModulValue));
-                    coloredImage[v][column] = newPixel;
-                    coloredImage[v][++column] = newPixel;
-                    coloredImage[v][++column] = newPixel;
+                    convertedTab[v][u] = newPixel;
+                    convertedTab[v][u+1] = newPixel;
+                    convertedTab[v][u+2] = newPixel;
+                    convertedTab[v][u+3] = newPixel;
                 }
             }
 
-            CreateSpectrumImage(coloredImage);
+            CreateSpectrumImage(convertedTab);
         }
     }
 }
